@@ -63,6 +63,24 @@ type FormState = {
   company: string;
 };
 
+const fieldSteps: Record<string, 1 | 2 | 3> = {
+  accountType: 1,
+  name: 1,
+  email: 1,
+  location: 1,
+  organizationName: 1,
+  individualRole: 1,
+  website: 2,
+  stage: 2,
+  summary: 2,
+  context: 2,
+  goals: 3,
+  targetRegions: 3,
+  referralSource: 3,
+  consentToProcess: 3,
+  productUpdates: 3,
+};
+
 const initialState: FormState = {
   accountType: "startup",
   name: "",
@@ -147,10 +165,17 @@ export function ApplyForm() {
         message?: string;
         reference?: string;
         created?: boolean;
+        fields?: Record<string, string[]>;
       };
 
       if (!response.ok || !payload.ok || !payload.reference) {
-        throw new Error(payload.message || "Your signup could not be saved.");
+        const [erroredField, messages] =
+          Object.entries(payload.fields ?? {}).sort(
+            ([a], [b]) => (fieldSteps[a] ?? 3) - (fieldSteps[b] ?? 3),
+          )[0] ?? [];
+        const fieldStep = erroredField ? fieldSteps[erroredField] : undefined;
+        if (fieldStep) setStep(fieldStep);
+        throw new Error(messages?.[0] || payload.message || "Your signup could not be saved.");
       }
 
       setResult({
