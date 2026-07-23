@@ -40,11 +40,16 @@ const MAX_SUBMISSIONS = 5;
 
 function clientKey(request: NextRequest) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const address = forwarded || request.headers.get("x-real-ip") || "unknown";
+  const address = forwarded || request.headers.get("x-real-ip");
+  // No shared "unknown" bucket: if we can't identify the client, fail open
+  // rather than letting one visitor's attempts lock out every other visitor.
+  if (!address) return null;
   return createHash("sha256").update(address).digest("hex");
 }
 
-function isRateLimited(key: string) {
+function isRateLimited(key: string | null) {
+  if (!key) return false;
+
   const now = Date.now();
   const current = rateLimit.get(key);
 
@@ -62,16 +67,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { ok: false, message: "This submission is too large." },
       { status: 413 },
-    );
-  }
-
-  if (isRateLimited(clientKey(request))) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Too many attempts. Please wait a few minutes and try again.",
-      },
-      { status: 429 },
     );
   }
 
@@ -94,6 +89,18 @@ export async function POST(request: NextRequest) {
         fields: z.flattenError(parsed.error).fieldErrors,
       },
       { status: 400 },
+    );
+  }
+
+  // Only count well-formed attempts against the limit, so a user correcting
+  // a validation mistake doesn't burn their submission budget on typos.
+  if (isRateLimited(clientKey(request))) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Too many attempts. Please wait a few minutes and try again.",
+      },
+      { status: 429 },
     );
   }
 
